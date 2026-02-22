@@ -1,0 +1,16 @@
+[project]
+name = "food-assistant-rag-pipeline"
+version = "0.1.0"
+description = "Food Assistant RAG Pipeline"
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [
+    { name = "Denys Nykoriak", email = "denys.nykoriak@gmail.com" }
+]
+dependencies = [
+    "argparse>=1.4.0",
+    "pandas>=3.0.1",
+    "pathlib>=1.0.1",
+    "requests>=2.32.5",
+    "weaviate-client>=4.19.4",
+]
