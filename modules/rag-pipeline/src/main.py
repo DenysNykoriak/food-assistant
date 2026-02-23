@@ -1,9 +1,7 @@
 import argparse
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
-import requests
 import weaviate
 
 import config
@@ -18,27 +16,9 @@ weaviate_client = weaviate.connect_to_custom(
     grpc_secure=config.WEAVIATE_GRPC_SECURE,
 )
 
+
 def row_to_content(row: pd.Series) -> str:
     return " ".join(str(v) for v in row.values if pd.notna(v) and str(v).strip())
-
-
-def embed_one(content: str) -> wvc.data.DataObject | None:
-    try:
-        res = requests.post(
-            f"{config.EMBEDDER_URL}/embed",
-            json={"inputs": content},
-            timeout=60,
-        )
-        res.raise_for_status()
-        emb = res.json()["embeddings"]
-        vector = emb[0] if isinstance(emb[0], list) else emb
-        return wvc.data.DataObject(
-            properties={"content": content},
-            vector=vector,
-        )
-    except Exception:
-        print(f"Error embedding: {content[:80]}...")
-        return None
 
 
 def main():
@@ -61,23 +41,24 @@ def main():
     contents = [row_to_content(row) for _, row in df.iterrows()]
     contents = [c for c in contents if c.strip()]
 
-    data_to_embed: list[wvc.data.DataObject] = []
-    max_workers = 8
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        results = list(executor.map(embed_one, contents))
-    data_to_embed = [r for r in results if r is not None]
-
-    # Insert data into Weaviate
-    ## Check if collection exists
     if not weaviate_client.collections.exists("Product"):
         weaviate_client.collections.create(
             "Product",
-            vector_config=wvc.config.Configure.Vectors.self_provided()
+            properties=[
+                wvc.config.Property(name="content", data_type=wvc.config.DataType.TEXT),
+            ],
+            vector_config=[
+                wvc.config.Configure.Vectors.text2vec_transformers(
+                    name="content_vector",
+                    source_properties=["content"],
+                )
+            ],
         )
 
-    ## Insert data
     products = weaviate_client.collections.use("Product")
-    products.data.insert_many(data_to_embed)
+    with products.batch.fixed_size(batch_size=200) as batch:
+        for content in contents:
+            batch.add_object(properties={"content": content})
 
 
 main()
